@@ -1,21 +1,22 @@
 #!/bin/bash
-
+RELEASE=release-0
+_7Z_VERSION=24.08
 SBCL_VERSION=2.0.8
 MINGW_VERSION=8.1.0
 
 function install_7z () {
 if [[ ! -f 7z/bin/7zr.exe ]]; then 
-    curl -L -O https://www.7-zip.org/a/7zr.exe
+    curl -L -O https://github.com/snmsts/reactos-env/releases/download/$RELEASE/7zr-$1.exe
     mkdir -p 7z/bin
-    mv 7zr.exe 7z/bin
+    mv 7zr-$1.exe 7z/bin/7zr.exe
 fi
 }
 
 function install_mingw () {
 if [[ ! -d mingw/$1 ]]; then
-    curl -L -O https://sourceforge.net/projects/mingw-w64/files/Toolchains%20targetting%20Win32/Personal%20Builds/mingw-builds/$1/threads-win32/sjlj/i686-$1-release-win32-sjlj-rt_v6-rev0.7z
-    7z/bin/7zr x i686-$1-release-win32-sjlj-rt_v6-rev0.7z
-    rm i686-$1-release-win32-sjlj-rt_v6_rev.7z
+    curl -L -O https://github.com/snmsts/reactos-env/releases/download/$RELEASE/i686-$1-release-win32-sjlj.7z
+    7z/bin/7zr x i686-$1-release-win32-sjlj.7z
+    rm i686-$1-release-win32-sjlj.7z
     mkdir -p mingw
     mv mingw32 mingw/$1
 fi
@@ -40,7 +41,7 @@ function createrc () {
     echo "export GNUMAKE=mingw32-make" >> ~/$1
 }
 
-install_7z
+install_7z $_7Z_VERSION
 install_mingw $MINGW_VERSION
 install_sbcl $SBCL_VERSION
 createrc sbcl-dev
