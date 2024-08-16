@@ -3,6 +3,17 @@ RELEASE=release-0
 _7Z_VERSION=24.08
 SBCL_VERSION=2.0.8
 MINGW_VERSION=8.1.0
+WINSCP_VERSION=6.3.4
+
+function install_winscp () {
+if [[ ! -d winscp/$1 ]]; then
+    mkdir -p winscp
+    cd winscp && { curl -L -O https://github.com/snmsts/reactos-env/releases/download/$RELEASE/WinSCP-$1-Portable.zip ; cd -; }
+    mkdir $1
+    unzip winscp/WinSCP-$1-Portable.zip -d $1
+    mv $1 winscp/$1
+fi
+}
 
 function install_7z () {
 if [[ ! -f 7z/bin/7zr.exe ]]; then 
@@ -27,7 +38,7 @@ if [[ ! -d sbcl/$1 ]]; then
     curl -L -O https://github.com/roswell/sbcl_bin/releases/download/$1/sbcl-$1-x86-reactos-binary.tar.bz2
     tar xf sbcl-$1-x86-reactos-binary.tar.bz2
     cd sbcl-$1-x86-reactos
-    SBCL_HOME= sh install.sh --prefix=$PWD/../sbcl/$1
+    PATH=$PWD/../mingw/$MINGW_VERSION/bin:$PATH GNUMAKE=mingw32-make SBCL_HOME= sh install.sh --prefix=$PWD/../sbcl/$1
     cd ..; rm -rf sbcl-$1-x86-reactos sbcl-$1-x86-reactos-binary.tar.bz2
 fi
 }
@@ -41,6 +52,7 @@ function createrc () {
     echo "export GNUMAKE=mingw32-make" >> ~/$1
 }
 
+install_winscp $WINSCP_VERSION
 install_7z $_7Z_VERSION
 install_mingw $MINGW_VERSION
 install_sbcl $SBCL_VERSION
