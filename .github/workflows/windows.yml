@@ -54,4 +54,4 @@ jobs:
       shell: msys2 {0}
       run: |
         ./setup.sh;
-        make build
+        LISP_IMPL="ros -L sbcl-bin without-roswell=t --no-rc run" make build
