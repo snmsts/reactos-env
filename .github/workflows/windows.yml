@@ -12,7 +12,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86]
         include:
         - arch: x86_64
           arch2: amd64
@@ -39,7 +38,7 @@ jobs:
         path-type: inherit
         release: true
         update: true
-        install: 'make curl unzip'
+        install: 'make curl unzip patch'
     - name: Run MSYS2 once
       shell: msys2 {0}
       run: |
@@ -54,5 +53,5 @@ jobs:
     - name: build sbcl
       shell: msys2 {0}
       run: |
+        ./setup.sh;
         make build
-
