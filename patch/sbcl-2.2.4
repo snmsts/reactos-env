@@ -1,0 +1,360 @@
+diff --git a/src/runtime/Config.x86-win32 b/src/runtime/Config.x86-win32
+index 251767e01..51aa6b8ee 100644
+--- a/src/runtime/Config.x86-win32
++++ b/src/runtime/Config.x86-win32
+@@ -49,7 +49,7 @@ endif
+ GC_SRC = fullcgc.c gencgc.c traceroot.c
+ 
+ CFLAGS = -g -Wall -O3 \
+-        -fno-omit-frame-pointer -march=i686 -DWINVER=0x600 -D_WIN32_WINNT=0x600 \
++        -fno-omit-frame-pointer -march=i686 \
+         -D__W32API_USE_DLLIMPORT__ \
+ 	-mpreferred-stack-boundary=2
+ # We assume Windows ABI 4-byte alignment, but GCC decided to change to
+diff --git a/src/runtime/gc-common.c b/src/runtime/gc-common.c
+index a95ec3798..f2e9239a0 100644
+--- a/src/runtime/gc-common.c
++++ b/src/runtime/gc-common.c
+@@ -1418,20 +1418,20 @@ int finalizer_thread_runflag = 1;
+ #ifdef LISP_FEATURE_SB_THREAD
+ #ifdef LISP_FEATURE_WIN32
+ CRITICAL_SECTION finalizer_mutex;
+-CONDITION_VARIABLE finalizer_condvar;
++cnd_t finalizer_condvar;
+ void finalizer_thread_wait () {
+     EnterCriticalSection(&finalizer_mutex);
+     if (finalizer_thread_runflag)
+-        SleepConditionVariableCS(&finalizer_condvar, &finalizer_mutex, INFINITE);
++        win32_cond_wait(&finalizer_condvar, &finalizer_mutex);
+     LeaveCriticalSection(&finalizer_mutex);
+ }
+ void finalizer_thread_wake () {
+-    WakeAllConditionVariable(&finalizer_condvar);
++    win32_cond_signal(&finalizer_condvar);
+ }
+ void finalizer_thread_stop () {
+     EnterCriticalSection(&finalizer_mutex);
+     finalizer_thread_runflag = 0;
+-    WakeAllConditionVariable(&finalizer_condvar);
++    win32_cond_signal(&finalizer_condvar);
+     LeaveCriticalSection(&finalizer_mutex);
+ }
+ #else
+@@ -1459,7 +1459,7 @@ void gc_common_init()
+ {
+ #ifdef LISP_FEATURE_WIN32
+     InitializeCriticalSection(&finalizer_mutex);
+-    InitializeConditionVariable(&finalizer_condvar);
++    win32_cond_init(&finalizer_condvar);
+ #endif
+     hopscotch_init();
+     hopscotch_create(&weak_objects, HOPSCOTCH_HASH_FUN_DEFAULT, N_WORD_BYTES,
+diff --git a/src/runtime/pthreads_win32.h b/src/runtime/pthreads_win32.h
+index 8e58c8f52..17e665b9f 100644
+--- a/src/runtime/pthreads_win32.h
++++ b/src/runtime/pthreads_win32.h
+@@ -92,4 +92,23 @@ int sigaddset(sigset_t *set, int signum);
+ int sigdelset(sigset_t *set, int signum);
+ int sigismember(const sigset_t *set, int signum);
+ 
++typedef struct cnd_t {
++#if _WIN32_WINNT >= 0x0600
++    CONDITION_VARIABLE condvar;
++#else
++    int blocked;
++    int gone;
++    int to_unblock;
++    HANDLE sem_queue;
++    HANDLE sem_gate;
++    CRITICAL_SECTION monitor;
++#endif
++} cnd_t;
++
++int win32_cond_broadcast(cnd_t *cond);
++void win32_cond_destroy(cnd_t *cond);
++int win32_cond_init(cnd_t *cond);
++int win32_cond_signal(cnd_t *cond);
++int win32_cond_wait(cnd_t *cond, CRITICAL_SECTION *mtx);
++
+ #endif  /* WIN32_PTHREAD_INCLUDED */
+diff --git a/src/runtime/safepoint.c b/src/runtime/safepoint.c
+index bc7a48533..04f77f2d4 100644
+--- a/src/runtime/safepoint.c
++++ b/src/runtime/safepoint.c
+@@ -140,7 +140,7 @@ static struct gc_state {
+     /* Per-process lock for gc_state */
+     CRITICAL_SECTION lock;;
+     /* Conditions: one per phase */
+-    CONDITION_VARIABLE phase_cond[GC_NPHASES];
++    cnd_t phase_cond[GC_NPHASES];
+ #else
+     pthread_mutex_t lock;
+     pthread_cond_t phase_cond[GC_NPHASES];
+@@ -173,7 +173,7 @@ void safepoint_init()
+     extern void alloc_gc_page(void);
+     alloc_gc_page();
+     for (i=GC_NONE; i<GC_NPHASES; ++i)
+-        InitializeConditionVariable(&gc_state.phase_cond[i]);
++        win32_cond_init(&gc_state.phase_cond[i]);
+     InitializeCriticalSection(&gc_state.lock);
+ #else
+     os_validate(NOT_MOVABLE, GC_SAFEPOINT_PAGE_ADDR, BACKEND_PAGE_BYTES, 0, 0);
+@@ -227,7 +227,7 @@ gc_state_wait(gc_phase_t phase)
+     gc_state.master = NULL;
+     while(gc_state.phase != phase && !(phase == GC_QUIET && (gc_state.phase > GC_QUIET))) {
+ #ifdef LISP_FEATURE_WIN32
+-        SleepConditionVariableCS(&gc_state.phase_cond[phase], &gc_state.lock, INFINITE);
++        win32_cond_wait(&gc_state.phase_cond[phase], &gc_state.lock);
+ #elif defined LISP_FEATURE_SB_THREAD
+         pthread_cond_wait(&gc_state.phase_cond[phase],&gc_state.lock);
+ #else
+@@ -452,7 +452,7 @@ static inline void gc_advance(gc_phase_t cur, gc_phase_t old) {
+         odxprint(safepoints,"no blockers, direct advance to %d (%s)",gc_state.phase,gc_phase_names[gc_state.phase]);
+         gc_handle_phase();
+ #ifdef LISP_FEATURE_WIN32
+-        WakeAllConditionVariable(&gc_state.phase_cond[gc_state.phase]);
++        win32_cond_broadcast(&gc_state.phase_cond[gc_state.phase]);
+ #elif defined LISP_FEATURE_SB_THREAD
+         pthread_cond_broadcast(&gc_state.phase_cond[gc_state.phase]);
+ #endif
+diff --git a/src/runtime/win32-os.c b/src/runtime/win32-os.c
+index f001b79c8..ae4cf7258 100644
+--- a/src/runtime/win32-os.c
++++ b/src/runtime/win32-os.c
+@@ -620,8 +620,8 @@ struct {
+     console_char buffer[MAX_CONSOLE_TCHARS];
+     DWORD head, tail;
+     CRITICAL_SECTION lock;
+-    CONDITION_VARIABLE cond_has_data;
+-    CONDITION_VARIABLE cond_has_client;
++    cnd_t cond_has_data;
++    cnd_t cond_has_client;
+     HANDLE thread;
+     boolean initialized;
+     HANDLE handle;
+@@ -1636,7 +1636,7 @@ static __stdcall unsigned int tty_read_line_server(LPVOID arg)
+         BOOL ok;
+ 
+         while (!ttyinput.in_progress)
+-          SleepConditionVariableCS(&ttyinput.cond_has_client,&ttyinput.lock,INFINITE);
++          win32_cond_wait(&ttyinput.cond_has_client,&ttyinput.lock);
+ 
+         LeaveCriticalSection(&ttyinput.lock);
+ #ifdef LISP_FEATURE_SB_UNICODE
+@@ -1655,7 +1655,7 @@ static __stdcall unsigned int tty_read_line_server(LPVOID arg)
+ 
+         if (ok) {
+             ttyinput.tail += nchars;
+-            WakeAllConditionVariable(&ttyinput.cond_has_data);
++            win32_cond_broadcast(&ttyinput.cond_has_data);
+         }
+         ttyinput.in_progress = 0;
+     }
+@@ -1672,8 +1672,8 @@ tty_maybe_initialize_unlocked(HANDLE handle)
+                              0,FALSE,DUPLICATE_SAME_ACCESS)) {
+             return 0;
+         }
+-        InitializeConditionVariable(&ttyinput.cond_has_data);
+-        InitializeConditionVariable(&ttyinput.cond_has_client);
++        win32_cond_init(&ttyinput.cond_has_data);
++        win32_cond_init(&ttyinput.cond_has_client);
+         ttyinput.thread =
+           (HANDLE)_beginthreadex(NULL,
+                                  0, // stack size = default
+@@ -1702,7 +1702,7 @@ win32_tty_listen(HANDLE handle)
+         } else {
+             if (PeekConsoleInput(ttyinput.handle,&ir,1,&nevents) && nevents) {
+                 ttyinput.in_progress = 1;
+-                WakeAllConditionVariable(&ttyinput.cond_has_client);
++                win32_cond_broadcast(&ttyinput.cond_has_client);
+             }
+         }
+     }
+@@ -1742,9 +1742,9 @@ static int win32_read_console(HANDLE handle, void* buf, int count)
+                     /* We are to wait */
+                     ttyinput.in_progress=1;
+                     /* wake console reader */
+-                    WakeAllConditionVariable(&ttyinput.cond_has_client);
++                    win32_cond_broadcast(&ttyinput.cond_has_client);
+                 }
+-                SleepConditionVariableCS(&ttyinput.cond_has_data, &ttyinput.lock, INFINITE);
++                win32_cond_wait(&ttyinput.cond_has_data, &ttyinput.lock);
+                 io_end_interruptible(ttyinput.handle);
+             }
+         }
+@@ -1804,7 +1804,7 @@ win32_maybe_interrupt_io(void* thread)
+         if (h && (h!=INVALID_HANDLE_VALUE)) {
+             if (console_handle_p(h)) {
+                 EnterCriticalSection(&ttyinput.lock);
+-                WakeAllConditionVariable(&ttyinput.cond_has_data);
++                win32_cond_broadcast(&ttyinput.cond_has_data);
+                 LeaveCriticalSection(&ttyinput.lock);
+                 done = 1;
+                 goto unlock;
+@@ -2250,5 +2250,166 @@ int sigismember(const sigset_t *set, int signum)
+ {
+   return (*set & (1 << signum)) != 0;
+ }
++/* Condition variable */
++
++#if _WIN32_WINNT < 0x0600
++
++void impl_cond_do_signal(cnd_t *cond, int broadcast)
++{
++    int nsignal = 0;
++
++    EnterCriticalSection(&cond->monitor);
++    if (cond->to_unblock != 0) {
++        if (cond->blocked == 0) {
++            LeaveCriticalSection(&cond->monitor);
++            return;
++        }
++        if (broadcast) {
++            cond->to_unblock += nsignal = cond->blocked;
++            cond->blocked = 0;
++        } else {
++            nsignal = 1;
++            cond->to_unblock++;
++            cond->blocked--;
++        }
++    } else if (cond->blocked > cond->gone) {
++        WaitForSingleObject(cond->sem_gate, INFINITE);
++        if (cond->gone != 0) {
++            cond->blocked -= cond->gone;
++            cond->gone = 0;
++        }
++        if (broadcast) {
++            nsignal = cond->to_unblock = cond->blocked;
++            cond->blocked = 0;
++        } else {
++            nsignal = cond->to_unblock = 1;
++            cond->blocked--;
++        }
++    }
++    LeaveCriticalSection(&cond->monitor);
++
++    if (0 < nsignal)
++        ReleaseSemaphore(cond->sem_queue, nsignal, NULL);
++}
++
++int impl_cond_do_wait(cnd_t *cond, CRITICAL_SECTION *mtx)
++{
++    int nleft = 0;
++    int ngone = 0;
++    int timeout = 0;
++    DWORD w;
++
++    WaitForSingleObject(cond->sem_gate, INFINITE);
++    cond->blocked++;
++    ReleaseSemaphore(cond->sem_gate, 1, NULL);
++
++    LeaveCriticalSection(mtx);
++
++    w = WaitForSingleObject(cond->sem_queue, INFINITE);
++    timeout = (w == WAIT_TIMEOUT);
++
++    EnterCriticalSection(&cond->monitor);
++    if ((nleft = cond->to_unblock) != 0) {
++        if (timeout) {
++            if (cond->blocked != 0) {
++                cond->blocked--;
++            } else {
++                cond->gone++;
++            }
++        }
++        if (--cond->to_unblock == 0) {
++            if (cond->blocked != 0) {
++                ReleaseSemaphore(cond->sem_gate, 1, NULL);
++                nleft = 0;
++            }
++            else if ((ngone = cond->gone) != 0) {
++                cond->gone = 0;
++            }
++        }
++    } else if (++cond->gone == INT_MAX/2) {
++        WaitForSingleObject(cond->sem_gate, INFINITE);
++        cond->blocked -= cond->gone;
++        ReleaseSemaphore(cond->sem_gate, 1, NULL);
++        cond->gone = 0;
++    }
++    LeaveCriticalSection(&cond->monitor);
++
++    if (nleft == 1) {
++        while (ngone--)
++            WaitForSingleObject(cond->sem_queue, INFINITE);
++        ReleaseSemaphore(cond->sem_gate, 1, NULL);
++    }
++
++    EnterCriticalSection(mtx);
++    return 0;
++}
++
++int win32_cond_broadcast(cnd_t *cond)
++{
++    if (!cond)
++        return 1;
++#if _WIN32_WINNT >= 0x0600
++    WakeAllConditionVariable(&cond->condvar);
++#else
++    impl_cond_do_signal(cond, 1);
++#endif
++    return 0;
++}
++
++void win32_cond_destroy(cnd_t *cond)
++{
++#if _WIN32_WINNT >= 0x0600
++    // do nothing
++#else
++    if(cond) {
++        CloseHandle(cond->sem_queue);
++        CloseHandle(cond->sem_gate);
++        DeleteCriticalSection(&cond->monitor);
++    }
++#endif
++}
++
++int win32_cond_init(cnd_t *cond)
++{
++    if (!cond)
++        return 1;
++#if _WIN32_WINNT >= 0x0600
++    InitializeConditionVariable(&cond->condvar);
++#else
++    cond->blocked = 0;
++    cond->gone = 0;
++    cond->to_unblock = 0;
++    cond->sem_queue = CreateSemaphore(NULL, 0, LONG_MAX, NULL);
++    cond->sem_gate = CreateSemaphore(NULL, 1, 1, NULL);
++    InitializeCriticalSection(&cond->monitor);
++#endif
++    return 0;
++}
++
++int win32_cond_signal(cnd_t *cond)
++{
++    if (!cond)
++        return 1;
++#if _WIN32_WINNT >= 0x0600
++    WakeConditionVariable(&cond->condvar);
++#else
++    impl_cond_do_signal(cond, 0);
++#endif
++    return 0;
++}
++
++int win32_cond_wait(cnd_t *cond, CRITICAL_SECTION *mtx)
++{
++    if (!cond || !mtx)
++        return 1;
++#if _WIN32_WINNT >= 0x0600
++    SleepConditionVariableCS(&cond->condvar, mtx, INFINITE);
++#else
++    impl_cond_do_wait(cond, mtx);
++#endif
++    return 0;
++}
++
++#endif
+ 
+ /* EOF */

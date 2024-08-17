@@ -1,0 +1,58 @@
+name: windows
+
+on:
+  schedule:
+    - cron:  '0 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  build-win64:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86]
+        include:
+        - arch: x86_64
+          arch2: amd64
+          bit: 64
+          target: x86-64
+    env:
+      LISP: sbcl-bin
+      RESULT_NAME: windows-${{ matrix.arch2 }}
+      RESULT_PATH: windows-${{ matrix.arch2 }}
+      RESULT_PATH_SUB: roswell
+      SBCL_OPTIONS:
+      ARCH: ${{ matrix.target }}
+      VERSION: ${{ secrets.VERSION }}
+      GITHUB_OAUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    environment: SET_VERSION
+
+    steps:
+    - run: git config --global core.autocrlf false
+    - uses: actions/checkout@v4
+    - uses: msys2/setup-msys2@v2.17.0
+      with:
+        msystem: MINGW${{ matrix.bit }}
+        path-type: inherit
+        release: true
+        update: true
+        install: 'make curl unzip'
+    - name: Run MSYS2 once
+      shell: msys2 {0}
+      run: |
+        pwd
+        echo $MSYSTEM
+        echo $MSYS2_PATH_TYPE
+        echo $PATH
+    - name: install roswell
+      shell: msys2 {0}
+      run: |
+        curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+    - name: build sbcl
+      shell: msys2 {0}
+      run: |
+        make build
+
