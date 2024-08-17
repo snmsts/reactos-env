@@ -9,4 +9,4 @@ build:
 	git clone --depth 5 https://github.com/sbcl/sbcl --branch=$(BRANCH) $@
 	sh -c "cd build; patch -p1 < ../patch/$(BRANCH)"
 	cat ~/sbcl-dev
-	sh -c ". ~/sbcl-dev; echo $PATH;cd build; sh make.sh --arch=x86 --xc-host=\"$(LISP_IMPL)\""
+	sh -c ". ~/sbcl-dev; echo $$PATH;cd build; sh make.sh --arch=x86 --xc-host=\"$(LISP_IMPL)\""
