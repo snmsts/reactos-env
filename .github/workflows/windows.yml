@@ -24,7 +24,6 @@ jobs:
       RESULT_PATH_SUB: roswell
       SBCL_OPTIONS:
       ARCH: ${{ matrix.target }}
-      VERSION: ${{ secrets.VERSION }}
       GITHUB_OAUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     environment: SET_VERSION
@@ -49,5 +48,5 @@ jobs:
     - name: build sbcl
       shell: msys2 {0}
       run: |
-        ./setup.sh;
+        ./setup.sh
         mingw32-make build
