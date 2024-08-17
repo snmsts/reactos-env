@@ -50,6 +50,7 @@ function createrc () {
     echo "export PATH=\"\$INSTALL_PATH/mingw/$MINGW_VERSION/bin:\$PATH\"" >> ~/$1
     echo "export SBCL_HOME=\$INSTALL_PATH/sbcl/$SBCL_VERSION/lib/sbcl" >> ~/$1
     echo "export GNUMAKE=mingw32-make" >> ~/$1
+    grep "\. $1" ~/.bashrc > /dev/null || echo ". sbcl-dev" >> ~/.bashrc
 }
 
 install_winscp $WINSCP_VERSION
@@ -58,4 +59,3 @@ install_mingw $MINGW_VERSION
 install_sbcl $SBCL_VERSION
 createrc sbcl-dev
 
-grep "\. sbcl-dev" ~/.bashrc > /dev/null || echo ". sbcl-dev" >> ~/.bashrc
