@@ -1,4 +1,6 @@
 BRANCH ?= sbcl-2.2.4
+LISP_IMPL ?= sbcl
+
 all:
 
 clean:
@@ -6,4 +8,5 @@ clean:
 build:
 	git clone --depth 5 https://github.com/sbcl/sbcl --branch=$(BRANCH) $@
 	sh -c "cd build; patch -p1 < ../patch/$(BRANCH)"
-	sh -c ". ~/sbcl-dev; cd build; sh make.sh --arch=x86"
+	cat ~/sbcl-dev
+	sh -c ". ~/sbcl-dev; echo $PATH;cd build; sh make.sh --arch=x86 --xc-host=\"$(LISP_IMPL)\""
