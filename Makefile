@@ -31,7 +31,7 @@ build:
 
 compile: build
 	$(MAKE) build/version.lisp-expr
-	mv sbcl/.git sbcl/_git
+	mv build/.git build/_git
 	sh -c ". ~/sbcl-dev;cd build; sh make.sh $(SBCL_OPTIONS) --arch=x86 --xc-host=\"$(LISP_IMPL)\"" || mv _git .git
 
 archive: build
