@@ -30,6 +30,7 @@ if [[ ! -d mingw/$1 ]]; then
     rm i686-$1-release-win32-sjlj.7z
     mkdir -p mingw
     mv mingw32 mingw/$1
+    cp mingw/$1/bin/gcc mingw/$1/bin/cc
 fi
 }
 
