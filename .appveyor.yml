@@ -3,4 +3,4 @@ image: Visual Studio 2013
 build_script:
   - C:\msys64\usr\bin\bash -lc "cd $APPVEYOR_BUILD_FOLDER;uname -s;uname -m;gcc -v;ls -al"
   - C:\msys64\usr\bin\bash -lc "cd $APPVEYOR_BUILD_FOLDER;bash setup.sh"
-  - C:\msys64\usr\bin\bash -lc "cd $APPVEYOR_BUILD_FOLDER;$GNUMAKE compile;$GNUMAKE archive"
+  - C:\msys64\usr\bin\bash -lc "cd $APPVEYOR_BUILD_FOLDER;. ~/.bashrc;gcc -v;make compile;make archive"
